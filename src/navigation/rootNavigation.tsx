@@ -3,10 +3,11 @@ import { RootStackParamList } from '../types/navigator.type';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import AuthScreen from '../screens/Auth.screen';
 import UserContext from '../contexts/user.context';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import NotesScreen from '../screens/notes/Notes.screen';
+import AuthScreen from '../screens/auth/Auth.screen';
+import ProfileScreen from '../screens/profile/Profile.screen';
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigation() {
@@ -25,13 +26,23 @@ export default function RootNavigation() {
       <NavigationContainer>
         <RootStack.Navigator>
           {userData ? (
-            <RootStack.Screen
-              name="Notes"
-              component={NotesScreen}
-              options={{
-                headerShown: false,
-              }}
-            />
+            <>
+              <RootStack.Screen
+                name="Notes"
+                component={NotesScreen}
+                options={{
+                  headerShown: false,
+                }}
+              />
+              <RootStack.Screen
+                name="Profile"
+                component={ProfileScreen}
+                options={{
+                  headerShown: true,
+                  headerTitleAlign: 'center',
+                }}
+              />
+            </>
           ) : (
             <RootStack.Screen
               name="Auth"

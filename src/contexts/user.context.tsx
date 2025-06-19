@@ -12,6 +12,7 @@ type UserDataType = {
   id: string;
   name: string | null;
   email: string;
+  photoURL: string | null;
 };
 
 type IUserContext = {
@@ -47,6 +48,7 @@ export function UserProvider({ children }: Readonly<{ children: ReactNode }>) {
             id: user.uid,
             name: user.displayName,
             email: user.email ?? '',
+            photoURL: user.photoURL ?? null,
           });
         }
       } catch (error) {

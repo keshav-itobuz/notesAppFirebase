@@ -29,6 +29,8 @@ import {
 } from '@react-native-firebase/firestore';
 import { Toast } from 'react-native-toast-notifications';
 import { notesStyle } from './notesStyle';
+import { NavigationProp, useNavigation } from '@react-navigation/native';
+import { RootStackParamList } from '../../types/navigator.type';
 
 interface Note {
   id: string;
@@ -40,6 +42,7 @@ interface Note {
 }
 
 export default function NotesScreen() {
+  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { userData } = useContext(UserContext);
   const [notes, setNotes] = useState<Note[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -221,7 +224,12 @@ export default function NotesScreen() {
       <View style={notesStyle.headerContainer}>
         <Text style={notesStyle.header}>My Notes </Text>
         <View style={notesStyle.userContainer}>
-          <Text>Hii, {userData?.name ?? 'User'}</Text>
+          <Text onPress={() => navigation.navigate('Profile')}>
+            Hii,{'  '}
+            <Text style={{ fontWeight: 'bold', color: '#007bff' }}>
+              {userData?.name ?? 'User'}
+            </Text>
+          </Text>
         </View>
       </View>
 
@@ -359,12 +367,14 @@ export default function NotesScreen() {
 
             <TextInput
               style={notesStyle.input}
+              placeholderTextColor={'gray'}
               placeholder="Title"
               value={newNote.title}
               onChangeText={text => setNewNote({ ...newNote, title: text })}
             />
             <TextInput
               style={[notesStyle.input, { height: 100 }]}
+              placeholderTextColor={'gray'}
               placeholder="Content"
               multiline
               value={newNote.content}
