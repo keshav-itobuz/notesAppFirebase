@@ -1,6 +1,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   StyleSheet,
@@ -20,10 +21,13 @@ import {
   query,
   where,
   orderBy,
+  deleteDoc,
+  doc,
 } from '@react-native-firebase/firestore';
 import { Toast } from 'react-native-toast-notifications';
 
 interface Note {
+  id: string;
   title: string;
   content: string;
   createdAt: any;
@@ -31,7 +35,7 @@ interface Note {
 }
 
 export default function NotesScreen() {
-  const { logout } = useContext(UserContext);
+  const { logout, userData } = useContext(UserContext);
   const [notes, setNotes] = useState<Note[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [newNote, setNewNote] = useState({ title: '', content: '' });
@@ -55,6 +59,7 @@ export default function NotesScreen() {
 
       const snapshot = await getDocs(notesQuery);
       const notes = snapshot.docs.map(doc => ({
+        id: doc.id,
         title: doc.data().title ?? '',
         content: doc.data().content ?? '',
         createdAt: doc.data().createdAt,
@@ -100,6 +105,29 @@ export default function NotesScreen() {
     }
   }
 
+  async function handleDeleteNote(noteId: string) {
+    try {
+      Alert.alert('Delete Note', 'Are you sure you want to delete this note?', [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteDoc(doc(dbInstance, 'notes', noteId));
+            Toast.show('Note deleted successfully', { type: 'success' });
+            fetchNotes(); // Refresh the list
+          },
+        },
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      Toast.show(message, { type: 'danger' });
+    }
+  }
+
   if (loading) {
     return (
       <View style={styles.loaderContainer}>
@@ -112,9 +140,12 @@ export default function NotesScreen() {
     <View style={styles.container}>
       <View style={styles.headerContainer}>
         <Text style={styles.header}>My Notes</Text>
-        <TouchableOpacity onPress={logout}>
-          <Icon name="logout" size={24} color="#007bff" />
-        </TouchableOpacity>
+        <View style={styles.userContainer}>
+          <Text>Hello, {userData?.name ?? 'User'}</Text>
+          <TouchableOpacity onPress={logout}>
+            <Icon name="logout" size={24} color="#007bff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
@@ -123,7 +154,12 @@ export default function NotesScreen() {
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
           <View style={styles.noteCard}>
-            <Text style={styles.noteTitle}>{item.title}</Text>
+            <View style={styles.noteHeader}>
+              <Text style={styles.noteTitle}>{item.title}</Text>
+              <TouchableOpacity onPress={() => handleDeleteNote(item.id)}>
+                <Icon name="delete" size={18} color="#ff3b30" />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.noteContent}>{item.content}</Text>
           </View>
         )}
@@ -181,6 +217,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  userContainer: {
+    flexDirection: 'row',
+    fontWeight: 'bold',
+    gap: 12,
+    alignItems: 'center',
+  },
   header: {
     fontSize: 26,
     fontWeight: 'bold',
@@ -190,6 +232,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   noteCard: {
     backgroundColor: '#fff',
@@ -245,7 +293,8 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '600',
-    marginBottom: 10,
+    marginBottom: 20,
+    textAlign: 'center',
     color: '#333',
   },
   input: {
@@ -257,7 +306,9 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
+    marginEnd: 10,
+    gap: 20,
     marginTop: 10,
   },
   cancelText: {

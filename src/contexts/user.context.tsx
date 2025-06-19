@@ -38,8 +38,6 @@ export function UserProvider({ children }: Readonly<{ children: ReactNode }>) {
     setUserData(null);
   }
 
-  console.log({ userData: userData });
-
   useEffect(() => {
     async function getUserData() {
       try {

@@ -2006,6 +2006,11 @@
   resolved "https://registry.yarnpkg.com/@react-native-firebase/firestore/-/firestore-22.2.1.tgz#6446b1215d8109fc0a152fc1e445fd27b05e9bf0"
   integrity sha512-QM5r9QN45Adn/N2BkbuQNlTiTwWlHsILIrL73psOyyyAihtQpig4bAJKVhNJdUthmR0PapI/xHG9+/1D1d6Czg==
 
+"@react-native-google-signin/google-signin@^14.0.1":
+  version "14.0.1"
+  resolved "https://registry.yarnpkg.com/@react-native-google-signin/google-signin/-/google-signin-14.0.1.tgz#1cba5bc4867fef24dd855385be937d590dc5000b"
+  integrity sha512-2f903eaHiv/Ob96vsWZitz+Z0k2J2W0/C7Ygrr6ejAT2JVzJCatmjF/eq62MWhuTNdU2WDX/oePxMbpQW6k2UA==
+
 "@react-native/assets-registry@0.80.0":
   version "0.80.0"
   resolved "https://registry.yarnpkg.com/@react-native/assets-registry/-/assets-registry-0.80.0.tgz#7c03e0cf07fdd9e4a54ce2bbe8ae49f48440d422"
