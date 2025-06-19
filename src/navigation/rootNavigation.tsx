@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AuthScreen from '../screens/Auth.screen';
 import UserContext from '../contexts/user.context';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import NotesScreen from '../screens/Notes.screen';
+import NotesScreen from '../screens/notes/Notes.screen';
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigation() {
