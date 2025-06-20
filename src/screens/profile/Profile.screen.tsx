@@ -101,10 +101,7 @@ export default function ProfileScreen() {
       const user = authInstance.currentUser;
       if (!user) throw new Error('User not logged in');
 
-      const filename = uri.substring(uri.lastIndexOf('/') + 1);
-      const storageRef = fbStorage.ref(
-        `profilePictures/${user.uid}/${filename}`,
-      );
+      const storageRef = fbStorage.ref(`profilePictures/${user.uid}`);
 
       // Convert file to blob
       const response = await fetch(uri);
