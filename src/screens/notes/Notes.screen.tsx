@@ -31,6 +31,8 @@ import { Toast } from 'react-native-toast-notifications';
 import { notesStyle } from './notesStyle';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../../types/navigator.type';
+import { saveNoteLocally } from '../../storage/offlineStorage';
+import NetInfo from '@react-native-community/netinfo';
 
 interface Note {
   id: string;
@@ -45,6 +47,7 @@ export default function NotesScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { userData } = useContext(UserContext);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newNote, setNewNote] = useState({
     id: '',
@@ -57,12 +60,30 @@ export default function NotesScreen() {
   const [lastVisible, setLastVisible] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
+  const [isOnline, setIsOnline] = useState(true);
 
   const pageSize = 7;
 
   useEffect(() => {
     fetchNotes();
   }, [filter]);
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      if (state.isConnected) {
+        setIsOnline(true);
+      } else {
+        setIsOnline(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchNotes(false);
+    setRefreshing(false);
+  };
 
   async function fetchNotes(isPaginating = false) {
     try {
@@ -145,20 +166,26 @@ export default function NotesScreen() {
         });
         Toast.show('Note updated successfully', { type: 'success' });
       } else {
-        await addDoc(collection(dbInstance, 'notes'), {
+        const newNoteData = {
           userId: user.uid,
           title: newNote.title.trim(),
           content: newNote.content.trim(),
+          isCompleted: false,
           createdAt: serverTimestamp(),
-        });
+        };
+        if (isOnline) {
+          await addDoc(collection(dbInstance, 'notes'), newNoteData);
+          fetchNotes();
+        } else {
+          saveNoteLocally(newNoteData);
+        }
         Toast.show('Note added successfully', { type: 'success' });
       }
-
-      fetchNotes();
-      resetForm();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       Toast.show(message, { type: 'danger' });
+    } finally {
+      resetForm();
     }
   }
 
@@ -292,6 +319,8 @@ export default function NotesScreen() {
         <FlatList
           data={notes}
           keyExtractor={item => item.id}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           contentContainerStyle={notesStyle.listContent}
           renderItem={({ item }) => (
             <View style={notesStyle.noteCard}>
