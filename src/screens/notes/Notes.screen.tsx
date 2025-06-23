@@ -30,7 +30,12 @@ import { Toast } from 'react-native-toast-notifications';
 import { notesStyle } from './notesStyle';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../../types/navigator.type';
-import { saveNoteLocally } from '../../storage/offlineStorage';
+import {
+  removeNoteLocally,
+  saveNoteLocally,
+  storage,
+  updateNoteLocally,
+} from '../../storage/offlineStorage';
 import NetInfo from '@react-native-community/netinfo';
 
 interface Note {
@@ -59,13 +64,10 @@ export default function NotesScreen() {
   const [lastVisible, setLastVisible] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
-  const [isOnline, setIsOnline] = useState(true);
+  const [isOnline, setIsOnline] = useState(false);
 
   const pageSize = 7;
 
-  useEffect(() => {
-    fetchNotes();
-  }, [filter]);
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(state => {
       if (state.isConnected) {
@@ -78,6 +80,10 @@ export default function NotesScreen() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    fetchNotes();
+  }, [filter]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchNotes(false);
@@ -86,9 +92,39 @@ export default function NotesScreen() {
 
   async function fetchNotes(isPaginating = false) {
     try {
-      if (!isPaginating) {
-        setLoading(true);
+      if (!isPaginating) setLoading(true);
+
+      if (!isOnline) {
+        // Get all local notes
+        const localNotes = storage
+          .getAllKeys()
+          .map(key => {
+            const raw = storage.getString(key);
+            if (!raw) return null;
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return null;
+            }
+          })
+          .filter(
+            n =>
+              n &&
+              !n.isDeleted &&
+              (!filter ||
+                filter === 'all' ||
+                (filter === 'completed' && n.isCompleted) ||
+                (filter === 'pending' && !n.isCompleted)),
+          );
+
+        // Sort descending by createdAt
+        localNotes.sort((a, b) => b.createdAt - a.createdAt);
+
+        setNotes(localNotes);
+        setTotalDocuments(localNotes.length);
+        return;
       }
+
       const user = authInstance.currentUser;
       if (!user) throw new Error('User not logged in');
 
@@ -105,14 +141,9 @@ export default function NotesScreen() {
       );
 
       if (filter !== 'all') {
-        notesQuery = query(
-          notesQuery,
-          where('isCompleted', '==', filter === 'completed'),
-        );
-        countQuery = query(
-          countQuery,
-          where('isCompleted', '==', filter === 'completed'),
-        );
+        const status = filter === 'completed';
+        notesQuery = query(notesQuery, where('isCompleted', '==', status));
+        countQuery = query(countQuery, where('isCompleted', '==', status));
       }
 
       if (isPaginating && lastVisible) {
@@ -120,6 +151,7 @@ export default function NotesScreen() {
       }
 
       const snapshot = await getDocs(notesQuery);
+
       const notes = snapshot.docs.map(doc => ({
         id: doc.id,
         title: doc.data().title ?? '',
@@ -127,6 +159,8 @@ export default function NotesScreen() {
         createdAt: doc.data().createdAt,
         userId: doc.data().userId ?? '',
         isCompleted: doc.data().isCompleted ?? false,
+        isSynced: true,
+        isDeleted: false,
       }));
 
       if (isPaginating) {
@@ -134,6 +168,10 @@ export default function NotesScreen() {
       } else {
         setNotes(notes);
       }
+      storage.clearAll();
+      notes.forEach(note => {
+        storage.set(note.id, JSON.stringify(note));
+      });
 
       setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
 
@@ -158,11 +196,15 @@ export default function NotesScreen() {
       if (!user) throw new Error('User not logged in');
 
       if (isEditing && newNote.id) {
-        await updateDoc(doc(dbInstance, 'notes', newNote.id), {
-          title: newNote.title.trim(),
-          content: newNote.content.trim(),
-          createdAt: Date.now(),
-        });
+        if (!isOnline) {
+          updateNoteLocally(newNote.id, newNote);
+        } else {
+          await updateDoc(doc(dbInstance, 'notes', newNote.id), {
+            title: newNote.title.trim(),
+            content: newNote.content.trim(),
+            createdAt: Date.now(),
+          });
+        }
         Toast.show('Note updated successfully', { type: 'success' });
       } else {
         const newNoteData = {
@@ -174,7 +216,6 @@ export default function NotesScreen() {
         };
         if (isOnline) {
           await addDoc(collection(dbInstance, 'notes'), newNoteData);
-          fetchNotes();
         } else {
           saveNoteLocally(newNoteData);
         }
@@ -184,6 +225,7 @@ export default function NotesScreen() {
       const message = error instanceof Error ? error.message : 'Unknown error';
       Toast.show(message, { type: 'danger' });
     } finally {
+      fetchNotes();
       resetForm();
     }
   }
@@ -199,9 +241,13 @@ export default function NotesScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            await deleteDoc(doc(dbInstance, 'notes', noteId));
-            Toast.show('Note deleted successfully', { type: 'success' });
+            if (!isOnline) {
+              await removeNoteLocally(noteId);
+            } else {
+              await deleteDoc(doc(dbInstance, 'notes', noteId));
+            }
             fetchNotes();
+            Toast.show('Note deleted successfully', { type: 'success' });
           },
         },
       ]);

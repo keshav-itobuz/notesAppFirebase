@@ -11,7 +11,8 @@ interface NoteInterface {
   isSynced?: boolean;
 }
 
-const storage = new MMKV({ id: 'notes-storage' });
+export const storage = new MMKV({ id: 'notes-storage' });
+let isSyncing = false;
 
 export const saveNoteLocally = (note: Partial<NoteInterface>) => {
   const id = `temp_${Date.now()}`;
@@ -20,45 +21,40 @@ export const saveNoteLocally = (note: Partial<NoteInterface>) => {
   storage.set(
     id,
     JSON.stringify({
+      id,
       ...note,
       createdAt,
       isSynced: false,
+      isDeleted: false,
     }),
   );
 };
 
-export const updateNote = (id: string, note: Partial<NoteInterface>) => {
+export const updateNoteLocally = (id: string, note: Partial<NoteInterface>) => {
   const existing = storage.getString(id);
-  if (!existing) return;
 
-  const parsed = JSON.parse(existing);
+  const parsed = JSON.parse(existing!);
   const updated = {
     ...parsed,
     ...note,
     isSynced: false,
+    isDeleted: false,
   };
 
   storage.set(id, JSON.stringify(updated));
 };
 
-export const getLocalNotes = (): NoteInterface[] => {
-  const keys = storage.getAllKeys();
-  const notes: NoteInterface[] = [];
+export const removeNoteLocally = async (id: string) => {
+  const existing = storage.getString(id);
 
-  for (const key of keys) {
-    const raw = storage.getString(key);
-    if (raw) {
-      const note = JSON.parse(raw);
-      if (!note.isSynced) {
-        notes.push({ id: key, ...note });
-      }
-    }
-  }
-
-  return notes;
+  const parsed = JSON.parse(existing!);
+  const updated = {
+    ...parsed,
+    isDeleted: true,
+    isSynced: false,
+  };
+  await storage.set(id, JSON.stringify(updated));
 };
-
-let isSyncing = false;
 
 export const syncNotes = async () => {
   if (isSyncing) {
@@ -82,15 +78,18 @@ export const syncNotes = async () => {
         }
 
         try {
-          await dbInstance.collection('notes').add({
-            title: note.title,
-            content: note.content,
-            isCompleted: note.isCompleted,
-            userId: note.userId,
-            createdAt: note.createdAt,
-          });
-
-          storage.delete(key);
+          if (note.isDeleted)
+            await dbInstance.collection('notes').doc(note.id).delete();
+          else {
+            await dbInstance.collection('notes').add({
+              title: note.title,
+              content: note.content,
+              isCompleted: note.isCompleted,
+              userId: note.userId,
+              createdAt: note.createdAt,
+            });
+          }
+          storage.set(key, JSON.stringify({ ...note, isSynced: true }));
         } catch (error) {
           console.error(`Failed to sync note ${key}`, error);
         }
