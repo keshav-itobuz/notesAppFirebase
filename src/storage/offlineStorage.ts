@@ -1,6 +1,5 @@
 import { MMKV } from 'react-native-mmkv';
 import { dbInstance } from '../config/firebase.config';
-import { serverTimestamp } from '@react-native-firebase/firestore';
 
 interface NoteInterface {
   id: string;
@@ -9,11 +8,23 @@ interface NoteInterface {
   isCompleted: boolean;
   createdAt: any;
   userId: string;
+  isSynced?: boolean;
 }
+
 const storage = new MMKV({ id: 'notes-storage' });
-export const saveNoteLocally = (note: any) => {
+
+export const saveNoteLocally = (note: Partial<NoteInterface>) => {
   const id = `temp_${Date.now()}`;
-  storage.set(id, JSON.stringify({ ...note, isSynced: false }));
+  const createdAt = Date.now();
+
+  storage.set(
+    id,
+    JSON.stringify({
+      ...note,
+      createdAt,
+      isSynced: false,
+    }),
+  );
 };
 
 export const updateNote = (id: string, note: Partial<NoteInterface>) => {
@@ -24,7 +35,7 @@ export const updateNote = (id: string, note: Partial<NoteInterface>) => {
   const updated = {
     ...parsed,
     ...note,
-    isSynced: false, // Mark it as unsynced again
+    isSynced: false,
   };
 
   storage.set(id, JSON.stringify(updated));
@@ -38,52 +49,56 @@ export const getLocalNotes = (): NoteInterface[] => {
     const raw = storage.getString(key);
     if (raw) {
       const note = JSON.parse(raw);
-      notes.push({ id: key, ...note });
+      if (!note.isSynced) {
+        notes.push({ id: key, ...note });
+      }
     }
   }
 
   return notes;
 };
 
+let isSyncing = false;
+
 export const syncNotes = async () => {
-  const allKeys = storage.getAllKeys();
+  if (isSyncing) {
+    return;
+  }
 
-  for (const key of allKeys) {
-    const stored = storage.getString(key);
-    if (!stored) continue;
+  isSyncing = true;
 
-    const note = JSON.parse(stored);
+  try {
+    const allKeys = storage.getAllKeys();
 
-    if (note.isSynced || !key.startsWith('temp_')) {
-      if (!note.userId) {
-        console.warn(`Skipping note ${key} - missing userId`);
-        continue;
-      }
+    for (const key of allKeys) {
+      const stored = storage.getString(key);
+      if (!stored) continue;
 
-      try {
-        const docRef = await dbInstance.collection('notes').add({
-          title: note.title,
-          content: note.content,
-          isCompleted: note.isCompleted,
-          userId: note.userId,
-          createdAt: serverTimestamp(),
-        });
+      const note = JSON.parse(stored);
 
-        storage.delete(key); // Remove temp note
+      if (!note.isSynced) {
+        if (!note.userId) {
+          continue;
+        }
 
-        storage.set(
-          docRef.id,
-          JSON.stringify({
+        try {
+          await dbInstance.collection('notes').add({
             title: note.title,
             content: note.content,
             isCompleted: note.isCompleted,
             userId: note.userId,
-            isSynced: true,
-          }),
-        );
-      } catch (error) {
-        console.log('Sync failed for:', key, error);
+            createdAt: note.createdAt,
+          });
+
+          storage.delete(key);
+        } catch (error) {
+          console.error(`Failed to sync note ${key}`, error);
+        }
       }
     }
+  } catch (error) {
+    console.error('Sync process failed:', error);
+  } finally {
+    isSyncing = false;
   }
 };

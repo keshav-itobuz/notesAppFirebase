@@ -16,7 +16,6 @@ import {
   collection,
   addDoc,
   getDocs,
-  serverTimestamp,
   query,
   where,
   orderBy,
@@ -162,7 +161,7 @@ export default function NotesScreen() {
         await updateDoc(doc(dbInstance, 'notes', newNote.id), {
           title: newNote.title.trim(),
           content: newNote.content.trim(),
-          createdAt: serverTimestamp(),
+          createdAt: Date.now(),
         });
         Toast.show('Note updated successfully', { type: 'success' });
       } else {
@@ -171,7 +170,7 @@ export default function NotesScreen() {
           title: newNote.title.trim(),
           content: newNote.content.trim(),
           isCompleted: false,
-          createdAt: serverTimestamp(),
+          createdAt: Date.now(),
         };
         if (isOnline) {
           await addDoc(collection(dbInstance, 'notes'), newNoteData);
