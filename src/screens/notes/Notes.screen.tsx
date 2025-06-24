@@ -423,6 +423,13 @@ export default function NotesScreen() {
       )}
 
       <TouchableOpacity
+        style={notesStyle.locationButton}
+        onPress={() => navigation.navigate('Location')}
+      >
+        <Icon name='location-on' size={30} color="white" />
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={notesStyle.fab}
         onPress={() => {
           resetForm();

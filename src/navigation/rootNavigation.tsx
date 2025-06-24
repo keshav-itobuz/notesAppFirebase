@@ -8,6 +8,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import NotesScreen from '../screens/notes/Notes.screen';
 import AuthScreen from '../screens/auth/Auth.screen';
 import ProfileScreen from '../screens/profile/Profile.screen';
+import LocationScreen from '../screens/location/Location.screen';
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigation() {
@@ -37,6 +38,14 @@ export default function RootNavigation() {
               <RootStack.Screen
                 name="Profile"
                 component={ProfileScreen}
+                options={{
+                  headerShown: true,
+                  headerTitleAlign: 'center',
+                }}
+              />
+              <RootStack.Screen
+                name="Location"
+                component={LocationScreen}
                 options={{
                   headerShown: true,
                   headerTitleAlign: 'center',
