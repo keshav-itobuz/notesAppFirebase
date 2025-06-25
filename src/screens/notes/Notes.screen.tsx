@@ -15,7 +15,6 @@ import { authInstance, dbInstance } from '../../config/firebase.config';
 import {
   collection,
   addDoc,
-  getDocs,
   query,
   where,
   orderBy,
@@ -23,20 +22,13 @@ import {
   doc,
   limit,
   startAfter,
-  getCountFromServer,
   updateDoc,
+  onSnapshot,
 } from '@react-native-firebase/firestore';
 import { Toast } from 'react-native-toast-notifications';
 import { notesStyle } from './notesStyle';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../../types/navigator.type';
-import {
-  removeNoteLocally,
-  saveNoteLocally,
-  storage,
-  updateNoteLocally,
-} from '../../storage/offlineStorage';
-import NetInfo from '@react-native-community/netinfo';
 
 interface Note {
   id: string;
@@ -51,7 +43,6 @@ export default function NotesScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { userData } = useContext(UserContext);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [newNote, setNewNote] = useState({
     id: '',
@@ -59,131 +50,82 @@ export default function NotesScreen() {
     content: '',
     isCompleted: false,
   });
-  const [totalDocuments, setTotalDocuments] = useState(0);
+  const [endReached, setEndReached] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastVisible, setLastVisible] = useState<any>(null);
+  const [page, setPage] = useState(1);
   const [isEditing, setIsEditing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'completed' | 'pending'>('all');
-  const [isOnline, setIsOnline] = useState(false);
 
-  const pageSize = 7;
+  const pageSize = 8;
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (state.isConnected) {
-        setIsOnline(true);
-      } else {
-        setIsOnline(false);
+    let unsubscribe: (() => void) | null = null;
+    const fetchNotes = async () => {
+      try {
+        if (loading) return; // Prevent multiple fetches
+        setLoading(true);
+
+        const user = authInstance.currentUser;
+        if (!user) throw new Error('User not logged in');
+
+        let notesQuery = query(
+          collection(dbInstance, 'notes'),
+          where('userId', '==', user.uid),
+          orderBy('createdAt', 'desc'),
+          limit(pageSize),
+        );
+
+        if (filter !== 'all') {
+          const status = filter === 'completed';
+          notesQuery = query(notesQuery, where('isCompleted', '==', status));
+        }
+
+        if (lastVisible) {
+          notesQuery = query(notesQuery, startAfter(lastVisible));
+        }
+
+        unsubscribe = onSnapshot(notesQuery, snapshot => {
+          const newNotes = snapshot.docs.map(doc => ({
+            id: doc.id,
+            title: doc.data().title ?? '',
+            content: doc.data().content ?? '',
+            createdAt: doc.data().createdAt,
+            userId: doc.data().userId ?? '',
+            isCompleted: doc.data().isCompleted ?? false,
+          }));
+
+          // Update endReached state
+          const hasMore = newNotes.length >= pageSize;
+          setEndReached(!hasMore);
+
+          // Update notes
+          if (lastVisible) {
+            setNotes(prevNotes => [...prevNotes, ...newNotes]);
+          } else {
+            setNotes(newNotes);
+          }
+
+          // Update lastVisible only if we got results
+          if (newNotes.length > 0) {
+            setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+          }
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unknown error';
+        Toast.show(message, { type: 'danger' });
+      } finally {
+        setLoading(false);
       }
-    });
+    };
 
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
     fetchNotes();
-  }, [filter]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchNotes(false);
-    setRefreshing(false);
-  };
-
-  async function fetchNotes(isPaginating = false) {
-    try {
-      if (!isPaginating) setLoading(true);
-
-      if (!isOnline) {
-        // Get all local notes
-        const localNotes = storage
-          .getAllKeys()
-          .map(key => {
-            const raw = storage.getString(key);
-            if (!raw) return null;
-            try {
-              return JSON.parse(raw);
-            } catch {
-              return null;
-            }
-          })
-          .filter(
-            n =>
-              n &&
-              !n.isDeleted &&
-              (!filter ||
-                filter === 'all' ||
-                (filter === 'completed' && n.isCompleted) ||
-                (filter === 'pending' && !n.isCompleted)),
-          );
-
-        // Sort descending by createdAt
-        localNotes.sort((a, b) => b.createdAt - a.createdAt);
-
-        setNotes(localNotes);
-        setTotalDocuments(localNotes.length);
-        return;
-      }
-
-      const user = authInstance.currentUser;
-      if (!user) throw new Error('User not logged in');
-
-      let notesQuery = query(
-        collection(dbInstance, 'notes'),
-        where('userId', '==', user.uid),
-        orderBy('createdAt', 'desc'),
-        limit(pageSize),
-      );
-
-      let countQuery = query(
-        collection(dbInstance, 'notes'),
-        where('userId', '==', user.uid),
-      );
-
-      if (filter !== 'all') {
-        const status = filter === 'completed';
-        notesQuery = query(notesQuery, where('isCompleted', '==', status));
-        countQuery = query(countQuery, where('isCompleted', '==', status));
-      }
-
-      if (isPaginating && lastVisible) {
-        notesQuery = query(notesQuery, startAfter(lastVisible));
-      }
-
-      const snapshot = await getDocs(notesQuery);
-
-      const notes = snapshot.docs.map(doc => ({
-        id: doc.id,
-        title: doc.data().title ?? '',
-        content: doc.data().content ?? '',
-        createdAt: doc.data().createdAt,
-        userId: doc.data().userId ?? '',
-        isCompleted: doc.data().isCompleted ?? false,
-        isSynced: true,
-        isDeleted: false,
-      }));
-
-      if (isPaginating) {
-        setNotes(prevNotes => [...prevNotes, ...notes]);
-      } else {
-        setNotes(notes);
-      }
-      storage.clearAll();
-      notes.forEach(note => {
-        storage.set(note.id, JSON.stringify(note));
-      });
-
-      setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-
-      const countSnapshot = await getCountFromServer(countQuery);
-      setTotalDocuments(countSnapshot.data().count);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      Toast.show(message, { type: 'danger' });
-    } finally {
-      setLoading(false);
-    }
-  }
+    return () => {
+      unsubscribe?.();
+    };
+  }, [filter, page]);
 
   async function handleAddNote() {
     if (!newNote.title.trim() || !newNote.content.trim()) {
@@ -196,15 +138,12 @@ export default function NotesScreen() {
       if (!user) throw new Error('User not logged in');
 
       if (isEditing && newNote.id) {
-        if (!isOnline) {
-          updateNoteLocally(newNote.id, newNote);
-        } else {
-          await updateDoc(doc(dbInstance, 'notes', newNote.id), {
-            title: newNote.title.trim(),
-            content: newNote.content.trim(),
-            createdAt: Date.now(),
-          });
-        }
+        await updateDoc(doc(dbInstance, 'notes', newNote.id), {
+          title: newNote.title.trim(),
+          content: newNote.content.trim(),
+          createdAt: Date.now(),
+        });
+
         Toast.show('Note updated successfully', { type: 'success' });
       } else {
         const newNoteData = {
@@ -214,19 +153,14 @@ export default function NotesScreen() {
           isCompleted: false,
           createdAt: Date.now(),
         };
-        if (isOnline) {
-          await addDoc(collection(dbInstance, 'notes'), newNoteData);
-        } else {
-          saveNoteLocally(newNoteData);
-        }
+        resetForm();
+        await addDoc(collection(dbInstance, 'notes'), newNoteData);
+
         Toast.show('Note added successfully', { type: 'success' });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       Toast.show(message, { type: 'danger' });
-    } finally {
-      fetchNotes();
-      resetForm();
     }
   }
 
@@ -241,12 +175,8 @@ export default function NotesScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            if (!isOnline) {
-              await removeNoteLocally(noteId);
-            } else {
-              await deleteDoc(doc(dbInstance, 'notes', noteId));
-            }
-            fetchNotes();
+            await deleteDoc(doc(dbInstance, 'notes', noteId));
+
             Toast.show('Note deleted successfully', { type: 'success' });
           },
         },
@@ -273,8 +203,6 @@ export default function NotesScreen() {
       await updateDoc(doc(dbInstance, 'notes', note.id), {
         isCompleted: !note.isCompleted,
       });
-
-      fetchNotes();
 
       Toast.show(`Marked as ${note.isCompleted ? 'Pending' : 'Completed'}`, {
         type: 'success',
@@ -312,7 +240,11 @@ export default function NotesScreen() {
             notesStyle.filterButton,
             filter === 'all' && notesStyle.activeFilter,
           ]}
-          onPress={() => setFilter('all')}
+          onPress={() => {
+            setFilter('all');
+            setLastVisible(null);
+            setEndReached(false);
+          }}
         >
           <Text
             style={[
@@ -328,7 +260,11 @@ export default function NotesScreen() {
             notesStyle.filterButton,
             filter === 'completed' && notesStyle.activeFilter,
           ]}
-          onPress={() => setFilter('completed')}
+          onPress={() => {
+            setFilter('completed');
+            setLastVisible(null);
+            setEndReached(false);
+          }}
         >
           <Text
             style={[
@@ -344,7 +280,11 @@ export default function NotesScreen() {
             notesStyle.filterButton,
             filter === 'pending' && notesStyle.activeFilter,
           ]}
-          onPress={() => setFilter('pending')}
+          onPress={() => {
+            setFilter('pending');
+            setLastVisible(null);
+            setEndReached(false);
+          }}
         >
           <Text
             style={[
@@ -356,7 +296,7 @@ export default function NotesScreen() {
           </Text>
         </TouchableOpacity>
       </View>
-      {loading ? (
+      {loading && !lastVisible ? (
         <View style={notesStyle.loaderContainer}>
           <ActivityIndicator size="large" color="#007bff" />
         </View>
@@ -364,8 +304,6 @@ export default function NotesScreen() {
         <FlatList
           data={notes}
           keyExtractor={item => item.id}
-          refreshing={refreshing}
-          onRefresh={onRefresh}
           contentContainerStyle={notesStyle.listContent}
           renderItem={({ item }) => (
             <View style={notesStyle.noteCard}>
@@ -410,14 +348,14 @@ export default function NotesScreen() {
           )}
           showsVerticalScrollIndicator={false}
           onEndReached={() => {
-            if (totalDocuments > notes.length) fetchNotes(true);
+            if (!endReached) setPage(prevPage => prevPage + 1);
           }}
           onEndReachedThreshold={0.1}
           ListEmptyComponent={() => (
             <Text style={notesStyle.emptyText}>No notes found</Text>
           )}
           ListFooterComponent={() =>
-            totalDocuments > notes.length && <ActivityIndicator />
+            loading && lastVisible && <ActivityIndicator />
           }
         />
       )}
@@ -426,7 +364,7 @@ export default function NotesScreen() {
         style={notesStyle.locationButton}
         onPress={() => navigation.navigate('Location')}
       >
-        <Icon name='location-on' size={30} color="white" />
+        <Icon name="location-on" size={30} color="white" />
       </TouchableOpacity>
 
       <TouchableOpacity
